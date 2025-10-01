@@ -89,6 +89,7 @@ class TestData(StatesGroup):
     test_code = State()
     test_name = State()
     test_questions_count = State()
+    test_score = State()
     test_correct_answers = State()
     
     # Test Taking States
@@ -98,3 +99,8 @@ class TestData(StatesGroup):
     test_edit_select = State()
     test_edit_field = State()
     test_delete_confirm = State()
+
+
+class UserData(StatesGroup):
+    # User name collection
+    custom_fullname = State()

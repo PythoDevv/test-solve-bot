@@ -20,7 +20,7 @@ async def start_test_taking(message: types.Message):
         "<code>TEST001+1a2b3c4c5c6b7a8c9c10b11b12b13a14c15c16a17a18b19b</code>\n\n"
         "‼️ <b>Diqqat!!</b> Testni barcha javoblarini yuboring!",
         reply_markup=InlineKeyboardMarkup().add(
-            InlineKeyboardButton("📋 Mening Testlarim", callback_data="my_tests")
+            InlineKeyboardButton("📋 Topshirgan testlarim", callback_data="my_tests")
         )
     )
 
@@ -82,7 +82,7 @@ async def process_test_answers(message: types.Message):
             if user_answer == correct_answer:
                 correct_count += 1
         
-        score = correct_count
+        score = correct_count * test['test_score']
         percentage = (correct_count / test['total_questions']) * 100
         
         # Save test attempt
@@ -97,13 +97,19 @@ async def process_test_answers(message: types.Message):
                 percentage=percentage
             )
         
+        # Update user total score if they passed (60% or higher)
+        # if percentage >= 60:
+        #     await db.update_user_total_score(message.from_user.id)
         
+                
         # Prepare result message
         result_text = f"✅ <b>Test yakunlandi!</b>\n\n"
         result_text += f"📝 <b>Test:</b> {test['test_name']}\n"
         result_text += f"🔢 <b>Kod:</b> {test['test_code']}\n"
         result_text += f"📊 <b>Natija:</b> {correct_count}/{test['total_questions']}\n"
-        result_text += f"📈 <b>Foiz:</b> {percentage:.1f}%\n\n"
+        result_text += f"📈 <b>Foiz:</b> {percentage:.1f}%\n"
+        result_text += f"🏆 <b>Test balli:</b> {test['test_score']}\n"
+        result_text += f"⭐ <b>Jami ballingiz:</b> {score}\n\n"
         
         # Add performance message
         if percentage >= 90:
@@ -138,21 +144,47 @@ async def show_my_tests(call: types.CallbackQuery):
     
     if not test_history:
         await call.message.answer(
-            "📋 <b>Mening testlarim</b>\n\n"
+            "📋 <b>Topshirgan testlarim</b>\n\n"
             "Hozircha siz hech qanday test topshirmagansiz."
         )
         return
     
-    text = "📋 <b>Mening testlarim:</b>\n\n"
+    # Split test history into chunks to avoid message length limit
+    chunk_size = 10  # Number of tests per message
+    total_tests = len(test_history)
     
-    for i, attempt in enumerate(test_history, 1):
-        text += f"{i}. <b>{attempt['test_name']}</b>\n"
-        text += f"   Kod: <code>{attempt['test_code']}</code>\n"
-        text += f"   Natija: {attempt['correct_answers']}/{attempt['total_questions']}\n"
-        text += f"   Foiz: {attempt['percentage']:.1f}%\n"
-        text += f"   Sana: {attempt['completed_at'].strftime('%d.%m.%Y %H:%M')}\n\n"
-    
-    await call.message.answer(text)
+    for chunk_start in range(0, total_tests, chunk_size):
+        chunk_end = min(chunk_start + chunk_size, total_tests)
+        chunk_tests = test_history[chunk_start:chunk_end]
+        
+        if chunk_start == 0:
+            text = f"📋 <b>Topshirgan testlarim ({total_tests} ta):</b>\n\n"
+        else:
+            text = f"📋 <b>Testlar (davomi):</b>\n\n"
+        
+        for i, attempt in enumerate(chunk_tests, chunk_start + 1):
+            text += f"{i}. <b>{attempt['test_name']}</b>\n"
+            text += f"   🔢 Kod: <code>{attempt['test_code']}</code>\n"
+            text += f"   📊 Natija: {attempt['correct_answers']}/{attempt['total_questions']}\n"
+            text += f"   📈 Foiz: {attempt['percentage']:.1f}%\n"
+            text += f"   🏆 Ball: {attempt['score']}\n"
+            text += f"   📅 Sana: {attempt['completed_at'].strftime('%d.%m.%Y %H:%M')}\n\n"
+        
+        # Check if message is too long (Telegram limit is ~4096 characters)
+        if len(text) > 4000:
+            # Split further if still too long
+            lines = text.split('\n')
+            current_chunk = ""
+            for line in lines:
+                if len(current_chunk + line + '\n') > 4000:
+                    await call.message.answer(current_chunk)
+                    current_chunk = line + '\n'
+                else:
+                    current_chunk += line + '\n'
+            if current_chunk:
+                await call.message.answer(current_chunk)
+        else:
+            await call.message.answer(text)
     await call.answer()
 
 

@@ -99,8 +99,45 @@ async def process_test_questions_count(message: types.Message, state: FSMContext
         await state.update_data(test_questions_count=questions_count)
         await message.answer(
             f"✅ Savollar soni qabul qilindi: {questions_count}\n\n"
+            f"Test uchun nechta ball berish kerak? (masalan: 5):",
+            reply_markup=back
+        )
+        await TestData.test_score.set()
+        
+    except ValueError:
+        await message.answer(
+            "❌ <b>Xato!</b>\n\n"
+            "Faqat raqam kiriting!\n"
+            "Qayta kiriting:",
+            reply_markup=back
+        )
+
+
+@dp.message_handler(state=TestData.test_score)
+async def process_test_score(message: types.Message, state: FSMContext):
+    """Process test score input"""
+    if message.text == '🔙️ Orqaga':
+        await message.answer('Bekor qilindi', reply_markup=admin_key)
+        await state.finish()
+        return
+    
+    try:
+        test_score = int(message.text.strip())
+        if test_score <= 0:
+            await message.answer(
+                "❌ <b>Xato!</b>\n\n"
+                "Test balli 0 dan katta bo'lishi kerak.\n"
+                "Qayta kiriting:",
+                reply_markup=back
+            )
+            return
+        
+        await state.update_data(test_score=test_score)
+        user_data = await state.get_data()
+        await message.answer(
+            f"✅ Test balli qabul qilindi: {test_score}\n\n"
             f"To'g'ri javoblarni kiriting (masalan: abcccbaccbbbaccaabb):\n"
-            f"<i>Javoblar {questions_count} ta bo'lishi kerak</i>",
+            f"<i>Javoblar {user_data['test_questions_count']} ta bo'lishi kerak</i>",
             reply_markup=back
         )
         await TestData.test_correct_answers.set()
@@ -160,6 +197,7 @@ async def process_test_correct_answers(message: types.Message, state: FSMContext
         total_questions=user_data['test_questions_count'],
         correct_answers=user_data['test_correct_answers'],
         time_limit=0,
+        test_score=user_data['test_score'],
         created_by=message.from_user.id
     )
     
@@ -168,7 +206,7 @@ async def process_test_correct_answers(message: types.Message, state: FSMContext
         f"📝 <b>Test kodi:</b> {test['test_code']}\n"
         f"📋 <b>Test nomi:</b> {test['test_name']}\n"
         f"📊 <b>Savollar soni:</b> {test['total_questions']}\n"
-        # f"⏰ <b>Vaqt chegarasi:</b> {test['time_limit']} daqiqa\n"
+        f"🏆 <b>Test balli:</b> {test['test_score']}\n"
         f"🆔 <b>Test ID:</b> {test['id']}\n\n"
         f"Foydalanuvchilar testni quyidagi formatda yuborishlari mumkin:\n"
         f"<code>{test['test_code']}+javoblar</code>",
@@ -200,15 +238,44 @@ async def list_tests(message: types.Message):
         )
         return
     
-    text = "📋 <b>Testlar ro'yxati:</b>\n\n"
-    for i, test in enumerate(tests, 1):
-        text += f"{i}. <b>{test['test_name']}</b>\n"
-        text += f"   Kodi: <code>{test['test_code']}</code>\n"
-        text += f"   Savollar: {test['total_questions']} ta\n"
-        text += f"   Vaqt: {test['time_limit']} daqiqa\n"
-        text += f"   ID: {test['id']}\n\n"
+    # Split tests into chunks to avoid message length limit
+    chunk_size = 15  # Number of tests per message
+    total_tests = len(tests)
     
-    await message.answer(text, reply_markup=admin_key)
+    for chunk_start in range(0, total_tests, chunk_size):
+        chunk_end = min(chunk_start + chunk_size, total_tests)
+        chunk_tests = tests[chunk_start:chunk_end]
+        
+        if chunk_start == 0:
+            text = f"📋 <b>Testlar ro'yxati ({total_tests} ta):</b>\n\n"
+        else:
+            text = f"📋 <b>Testlar (davomi):</b>\n\n"
+        
+        for i, test in enumerate(chunk_tests, chunk_start + 1):
+            text += f"{i}. <b>{test['test_name']}</b>\n"
+            text += f"   🔢 Kodi: <code>{test['test_code']}</code>\n"
+            text += f"   📊 Savollar: {test['total_questions']} ta\n"
+            text += f"   🏆 Ball: {test['test_score']}\n"
+            text += f"   ⏰ Vaqt: {test['time_limit']} daqiqa\n"
+            text += f"   🆔 ID: {test['id']}\n\n"
+        
+        # Check if message is too long (Telegram limit is ~4096 characters)
+        if len(text) > 4000:
+            # Split further if still too long
+            lines = text.split('\n')
+            current_chunk = ""
+            for line in lines:
+                if len(current_chunk + line + '\n') > 4000:
+                    await message.answer(current_chunk)
+                    current_chunk = line + '\n'
+                else:
+                    current_chunk += line + '\n'
+            if current_chunk:
+                await message.answer(current_chunk)
+        else:
+            await message.answer(text)
+    
+    await message.answer("✅ Barcha testlar ko'rsatildi", reply_markup=admin_key)
 
 
 @dp.message_handler(text='📊 Test Natijalari')
@@ -266,20 +333,60 @@ async def show_test_results(message: types.Message, state: FSMContext):
         stats = await db.get_test_statistics(test_id)
         attempts = await db.get_test_attempts_by_test(test_id)
         
-        text = f"📊 <b>Test natijalari</b>\n\n"
-        text += f"📝 <b>Test:</b> {test['test_name']}\n"
-        text += f"🔢 <b>Kod:</b> {test['test_code']}\n"
-        text += f"📈 <b>Jami urinishlar:</b> {stats['total_attempts']}\n"
-        text += f"📊 <b>O'rtacha ball:</b> {stats['average_score']:.1f}%\n"
-        text += f"🏆 <b>Eng yuqori ball:</b> {stats['highest_score']:.1f}%\n"
-        text += f"📉 <b>Eng past ball:</b> {stats['lowest_score']:.1f}%\n\n"
+        # Header message
+        header_text = f"📊 <b>Test natijalari</b>\n\n"
+        header_text += f"📝 <b>Test:</b> {test['test_name']}\n"
+        header_text += f"🔢 <b>Kod:</b> {test['test_code']}\n"
+        header_text += f"🏆 <b>Test balli:</b> {test['test_score']}\n"
+        header_text += f"📈 <b>Jami urinishlar:</b> {stats['total_attempts']}\n"
+        header_text += f"📊 <b>O'rtacha ball:</b> {stats['average_score']:.1f}%\n"
+        header_text += f"🏆 <b>Eng yuqori ball:</b> {stats['highest_score']:.1f}%\n"
+        header_text += f"📉 <b>Eng past ball:</b> {stats['lowest_score']:.1f}%\n\n"
+        
+        await message.answer(header_text, reply_markup=admin_key)
         
         if attempts:
-            text += "<b>Eng yaxshi natijalar:</b>\n"
-            for i, attempt in enumerate(attempts[:10], 1):  # Show top 10
-                text += f"{i}. {attempt['full_name']} - {attempt['percentage']:.1f}%\n"
+            # Sort attempts by percentage (highest first)
+            attempts_sorted = sorted(attempts, key=lambda x: x['percentage'], reverse=True)
+            
+            # Split attempts into chunks to avoid message length limit
+            chunk_size = 20  # Number of attempts per message
+            total_attempts = len(attempts_sorted)
+            
+            for chunk_start in range(0, total_attempts, chunk_size):
+                chunk_end = min(chunk_start + chunk_size, total_attempts)
+                chunk_attempts = attempts_sorted[chunk_start:chunk_end]
+                
+                if chunk_start == 0:
+                    attempts_text = f"📋 <b>Barcha urinishlar ({total_attempts} ta):</b>\n\n"
+                else:
+                    attempts_text = f"📋 <b>Urinishlar (davomi):</b>\n\n"
+                
+                for i, attempt in enumerate(chunk_attempts, chunk_start + 1):
+                    attempts_text += f"{i}. <b>{attempt['full_name']}</b>\n"
+                    attempts_text += f"   📊 Natija: {attempt['correct_answers']}/{attempt['total_questions']}\n"
+                    attempts_text += f"   📈 Foiz: {attempt['percentage']:.1f}%\n"
+                    attempts_text += f"   🏆 Ball: {attempt['score']}\n"
+                    attempts_text += f"   📅 Sana: {attempt['completed_at'].strftime('%d.%m.%Y %H:%M')}\n\n"
+                
+                # Check if message is too long (Telegram limit is ~4096 characters)
+                if len(attempts_text) > 4000:
+                    # Split further if still too long
+                    lines = attempts_text.split('\n')
+                    current_chunk = ""
+                    for line in lines:
+                        if len(current_chunk + line + '\n') > 4000:
+                            await message.answer(current_chunk)
+                            current_chunk = line + '\n'
+                        else:
+                            current_chunk += line + '\n'
+                    if current_chunk:
+                        await message.answer(current_chunk)
+                else:
+                    await message.answer(attempts_text)
+        else:
+            await message.answer("📋 Hozircha hech kim bu testni topshirmagan.")
         
-        await message.answer(text, reply_markup=admin_key)
         await state.finish()
         
     except ValueError:

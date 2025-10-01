@@ -4,7 +4,7 @@ from aiogram import types
 
 from keyboards.default.all import number
 from loader import dp, db, bot
-from states.rekStates import RekData
+from states.rekStates import RekData, UserData
 from utils.misc import subscription
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import BoundFilter
@@ -241,8 +241,22 @@ async def show_channels(message: types.Message, state: FSMContext):
             buttons_list.append(buttons_dict)
         status *= is_subscribe
     if status and len_buttons == 0:
+        # Check if user needs to provide custom fullname
+        user = await db.select_user(telegram_id=message.from_user.id)
+        if user and not user.get('custom_fullname'):
+            await message.answer(
+                "Familiya va ismingizni kiriting:",
+                reply_markup=types.ReplyKeyboardMarkup(
+                    keyboard=[[types.KeyboardButton(text='🔙️ Orqaga')]],
+                    resize_keyboard=True
+                )
+            )
+            await UserData.custom_fullname.set()
+            return
+        
         button_score.add(types.KeyboardButton(text="📝 Testlarga Javob Berish"))
         button_score.add(types.KeyboardButton(text="❓ Test Yordam"))
+        button_score.add(types.KeyboardButton(text="📋 Topshirgan testlarim"))
 
         lessons = await db.select_related_lessons(button_name="Obunadan so'ng")
 
@@ -444,25 +458,37 @@ async def checker(call: types.CallbackQuery, state: FSMContext):
 
     len_buttons = len(buttons_list)
     if status and len_buttons == 0:
+        # Check if user needs to provide custom fullname
+        user = await db.select_user(telegram_id=call.from_user.id)
+        if user and not user.get('custom_fullname'):
+            await call.message.answer(
+                "Familiya va ismingizni kiriting:",
+                reply_markup=types.ReplyKeyboardMarkup(
+                    keyboard=[[types.KeyboardButton(text='🔙️ Orqaga')]],
+                    resize_keyboard=True
+                )
+            )
+            await UserData.custom_fullname.set()
+            return
+        
         lessons = await db.select_related_lessons(button_name="Obunadan so'ng")
-
 
         button_score = types.ReplyKeyboardMarkup(resize_keyboard=True)
         button_score.add(types.KeyboardButton(text="📝 Testlarga Javob Berish"))
         button_score.add(types.KeyboardButton(text="❓ Test Yordam"))
-
-        if lessons:
-            for i in lessons:
-                if i[2] == 'video':
-                    await call.message.answer_video(video=f"{i[3]}", caption=f'{i[5]}', reply_markup=button_score)
-                elif i[2] == 'document':
-                    await call.message.answer_document(document=f"{i[3]}", caption=f'{i[5]}', reply_markup=button_score)
-                elif i[2] == 'audio':
-                    await call.message.answer_audio(audio=f"{i[3]}", caption=f'{i[5]}', reply_markup=button_score)
-                elif i[2] == 'photo':
-                    await call.message.answer_photo(photo=f"{i[3]}", caption=f'{i[5]}', reply_markup=button_score)
-                elif i[2] == 'text':
-                    await call.message.answer(f'{i[5]}', reply_markup=button_score)
+        button_score.add(types.KeyboardButton(text="📋 Topshirgan testlarim"))
+        
+        for i in lessons:
+            if i[2] == 'video':
+                await call.message.answer_video(video=f"{i[3]}", caption=f'{i[5]}', reply_markup=button_score)
+            elif i[2] == 'document':
+                await call.message.answer_document(document=f"{i[3]}", caption=f'{i[5]}', reply_markup=button_score)
+            elif i[2] == 'audio':
+                await call.message.answer_audio(audio=f"{i[3]}", caption=f'{i[5]}', reply_markup=button_score)
+            elif i[2] == 'photo':
+                await call.message.answer_photo(photo=f"{i[3]}", caption=f'{i[5]}', reply_markup=button_score)
+            elif i[2] == 'text':
+                await call.message.answer(f'{i[5]}', reply_markup=button_score)
     else:
         tugmalar = await db.select_tugma()
         if tugmalar:

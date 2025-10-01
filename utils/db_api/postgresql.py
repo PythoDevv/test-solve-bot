@@ -51,7 +51,8 @@ class Database:
             telegram_id BIGINT NOT NULL UNIQUE,
             user_args VARCHAR(55) NULL,
             status VARCHAR(255) NOT NULL DEFAULT 'active',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            custom_fullname VARCHAR(255) NULL
         );
 
         CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON Users(telegram_id);
@@ -313,6 +314,10 @@ class Database:
     async def update_user_score(self, score, telegram_id):
         sql = "UPDATE Users SET score=$1 WHERE telegram_id=$2"
         return await self.execute(sql, score, telegram_id, execute=True)
+
+    async def update_user_custom_fullname(self, custom_fullname, telegram_id):
+        sql = "UPDATE Users SET custom_fullname=$1 WHERE telegram_id=$2"
+        return await self.execute(sql, custom_fullname, telegram_id, execute=True)
 
     async def update_users_all_score(self):
         sql = "UPDATE Users SET score=0"
@@ -657,6 +662,7 @@ class Database:
             total_questions INTEGER NOT NULL,
             correct_answers TEXT NOT NULL,
             time_limit INTEGER DEFAULT 0,
+            test_score INTEGER DEFAULT 1,
             is_active BOOLEAN DEFAULT TRUE,
             created_by BIGINT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -689,13 +695,13 @@ class Database:
         await self.execute(sql, execute=True)
 
     # Test Management Methods
-    async def add_test(self, test_code, test_name, description, total_questions, correct_answers, time_limit, created_by):
+    async def add_test(self, test_code, test_name, description, total_questions, correct_answers, time_limit, test_score, created_by):
         sql = """
-        INSERT INTO tests (test_code, test_name, description, total_questions, correct_answers, time_limit, created_by) 
-        VALUES($1, $2, $3, $4, $5, $6, $7) 
+        INSERT INTO tests (test_code, test_name, description, total_questions, correct_answers, time_limit, test_score, created_by) 
+        VALUES($1, $2, $3, $4, $5, $6, $7, $8) 
         RETURNING *
         """
-        return await self.execute(sql, test_code, test_name, description, total_questions, correct_answers, time_limit, created_by, fetchrow=True)
+        return await self.execute(sql, test_code, test_name, description, total_questions, correct_answers, time_limit, test_score, created_by, fetchrow=True)
 
     async def get_test_by_code(self, test_code):
         sql = "SELECT * FROM tests WHERE test_code=$1"
@@ -771,3 +777,20 @@ class Database:
         WHERE test_id=$1
         """
         return await self.execute(sql, test_id, fetchrow=True)
+
+    async def calculate_user_total_score(self, user_id):
+        """Calculate user's total score from all test attempts"""
+        sql = """
+        SELECT COALESCE(SUM(t.test_score), 0) as total_score
+        FROM test_attempts ta
+        JOIN tests t ON ta.test_id = t.id
+        WHERE ta.user_id = $1
+        """
+        result = await self.execute(sql, user_id, fetchrow=True)
+        return result['total_score'] if result else 0
+
+    async def update_user_total_score(self, user_id):
+        """Update user's total score based on test attempts"""
+        total_score = await self.calculate_user_total_score(user_id)
+        await self.update_user_score(total_score, user_id)
+        return total_score

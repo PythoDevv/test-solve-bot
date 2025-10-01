@@ -13,3 +13,4 @@ from . import link_button
 from . import for_winners
 from . import test_handlers
 from . import test_user_handlers
+from . import name_collection
