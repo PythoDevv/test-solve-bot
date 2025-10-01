@@ -188,6 +188,58 @@ async def show_my_tests(call: types.CallbackQuery):
     await call.answer()
 
 
+# Handler for "Topshirgan testlarim" button
+@dp.message_handler(text='📋 Topshirgan testlarim')
+async def show_my_tests_button(message: types.Message):
+    """Show user's test history from button"""
+    user_id = message.from_user.id
+    test_history = await db.get_user_test_history(user_id)
+    
+    if not test_history:
+        await message.answer(
+            "📋 <b>Topshirgan testlarim</b>\n\n"
+            "Hozircha siz hech qanday test topshirmagansiz."
+        )
+        return
+    
+    # Split test history into chunks to avoid message length limit
+    chunk_size = 10  # Number of tests per message
+    total_tests = len(test_history)
+    
+    for chunk_start in range(0, total_tests, chunk_size):
+        chunk_end = min(chunk_start + chunk_size, total_tests)
+        chunk_tests = test_history[chunk_start:chunk_end]
+        
+        if chunk_start == 0:
+            text = f"📋 <b>Topshirgan testlarim ({total_tests} ta):</b>\n\n"
+        else:
+            text = f"📋 <b>Testlar (davomi):</b>\n\n"
+        
+        for i, attempt in enumerate(chunk_tests, chunk_start + 1):
+            text += f"{i}. <b>{attempt['test_name']}</b>\n"
+            text += f"   🔢 Kod: <code>{attempt['test_code']}</code>\n"
+            text += f"   📊 Natija: {attempt['correct_answers']}/{attempt['total_questions']}\n"
+            text += f"   📈 Foiz: {attempt['percentage']:.1f}%\n"
+            text += f"   🏆 Ball: {attempt['score']}\n"
+            text += f"   📅 Sana: {attempt['completed_at'].strftime('%d.%m.%Y %H:%M')}\n\n"
+        
+        # Check if message is too long (Telegram limit is ~4096 characters)
+        if len(text) > 4000:
+            # Split further if still too long
+            lines = text.split('\n')
+            current_chunk = ""
+            for line in lines:
+                if len(current_chunk + line + '\n') > 4000:
+                    await message.answer(current_chunk)
+                    current_chunk = line + '\n'
+                else:
+                    current_chunk += line + '\n'
+            if current_chunk:
+                await message.answer(current_chunk)
+        else:
+            await message.answer(text)
+
+
 # Help handler for test format
 @dp.message_handler(text='❓ Test Yordam')
 async def test_help(message: types.Message):
