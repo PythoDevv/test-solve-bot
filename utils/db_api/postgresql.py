@@ -752,7 +752,7 @@ class Database:
         FROM test_attempts ta 
         JOIN users u ON ta.user_id = u.telegram_id 
         WHERE ta.test_id=$1 
-        ORDER BY ta.score DESC, ta.completed_at DESC
+        ORDER BY ta.score DESC, ta.completed_at ASC
         """
         return await self.execute(sql, test_id, fetch=True)
 
