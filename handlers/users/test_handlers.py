@@ -1,5 +1,8 @@
 import re
+import pytz
+import asyncio
 from aiogram import types
+from datetime import datetime
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import CommandStart
 
@@ -363,11 +366,13 @@ async def show_test_results(message: types.Message, state: FSMContext):
                     attempts_text = f"📋 <b>Urinishlar (davomi):</b>\n\n"
                 
                 for i, attempt in enumerate(chunk_attempts, chunk_start + 1):
+                    tashkent_tz = pytz.timezone('Asia/Tashkent')
+                    completed_at_tashkent = attempt['completed_at'].astimezone(tashkent_tz)
                     attempts_text += f"{i}. <b>{attempt['full_name']}</b>\n"
                     attempts_text += f"   📊 Natija: {attempt['correct_answers']}/{attempt['total_questions']}\n"
                     attempts_text += f"   📈 Foiz: {attempt['percentage']:.1f}%\n"
                     attempts_text += f"   🏆 Ball: {attempt['score']}\n"
-                    attempts_text += f"   📅 Sana: {attempt['completed_at'].strftime('%d.%m.%Y %H:%M')}\n\n"
+                    attempts_text += f"   📅 Sana: {completed_at_tashkent.strftime('%d.%m.%Y %H:%M')}\n\n"
                 
                 # Check if message is too long (Telegram limit is ~4096 characters)
                 if len(attempts_text) > 4000:
@@ -377,13 +382,16 @@ async def show_test_results(message: types.Message, state: FSMContext):
                     for line in lines:
                         if len(current_chunk + line + '\n') > 4000:
                             await message.answer(current_chunk)
+                            await asyncio.sleep(0.04)
                             current_chunk = line + '\n'
                         else:
                             current_chunk += line + '\n'
                     if current_chunk:
                         await message.answer(current_chunk)
+                        await asyncio.sleep(0.04)
                 else:
                     await message.answer(attempts_text)
+                    await asyncio.sleep(0.04)
         else:
             await message.answer("📋 Hozircha hech kim bu testni topshirmagan.")
         
